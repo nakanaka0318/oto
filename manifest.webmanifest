@@ -1,0 +1,16 @@
+{
+  "name": "OTO STAGE",
+  "short_name": "OTO STAGE",
+  "description": "AI作曲3曲収録・好きな曲で譜面を作って遊べるリズムゲーム",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#0a0b1e",
+  "theme_color": "#0a0b1e",
+  "lang": "ja",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

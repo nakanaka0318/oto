@@ -45,6 +45,13 @@ const Settings = {
     showKeys: true,
     noteSize: 1.0,
     effects: true,
+    ytOffset: 0,         // ms YouTube 再生時に追加で加えるオフセット (YouTube はプレイヤー側の遅延が別にあるため)
+    autoOffset: true,    // プレイ結果からオフセットを自動補正
+    fullscreen: true,    // スマホでプレイ時に全画面・横向き
+    vibrate: false,      // タップ時に振動 (Android)
+    lowQuality: false,   // 軽量モード (解像度・光の演出を抑える)
+    touchWide: 1.0,      // タッチ判定の広さ (レーン単位の余白)
+    calibrated: false,
   },
   data: null,
   load() {
@@ -53,6 +60,11 @@ const Settings = {
     this.data = Object.assign({}, this.defaults, d);
     if (!Array.isArray(this.data.keys) || this.data.keys.length !== 6) this.data.keys = this.defaults.keys.slice();
     return this.data;
+  },
+  // 音源の種類に応じたオフセット (秒)
+  offsetFor(kind) {
+    const d = this.data;
+    return ((d.offset || 0) + (kind === 'youtube' ? d.ytOffset || 0 : 0)) / 1000;
   },
   save() {
     try { localStorage.setItem('oto-settings', JSON.stringify(this.data)); } catch (e) { /* ignore */ }

@@ -1,4 +1,8 @@
 :root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
   --bg: #0a0b1e;
   --panel: rgba(22, 24, 52, 0.82);
   --panel2: rgba(34, 37, 76, 0.9);
@@ -14,10 +18,14 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
   font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", Meiryo, system-ui, sans-serif;
-  -webkit-tap-highlight-color: transparent; }
+  -webkit-tap-highlight-color: transparent; overscroll-behavior: none; touch-action: manipulation;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%; }
+input, textarea, select { -webkit-user-select: text; user-select: text; }
+.topbar, .ed-top { padding-top: calc(12px + var(--sat)) !important; padding-left: calc(16px + var(--sal)) !important; padding-right: calc(16px + var(--sar)) !important; }
 button, input, select { font: inherit; color: inherit; }
 .screen { position: fixed; inset: 0; display: none; flex-direction: column; z-index: 2; }
 .screen.active { display: flex; }
+[hidden] { display: none !important; }
 .spacer { flex: 1; }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .small { font-size: 12px; color: var(--muted); }
@@ -145,7 +153,7 @@ kbd { font-size: 10px; padding: 0 4px; border: 1px solid var(--line); border-rad
 #scr-game { z-index: 3; background: transparent; }
 #scr-game.yt { background: transparent; }
 #game-canvas { position: absolute; inset: 0; touch-action: none; display: block; }
-.pause-btn { position: absolute; top: 14px; right: 14px; width: 46px; height: 46px; border-radius: 50%; border: 1px solid var(--line);
+.pause-btn { position: absolute; top: calc(12px + var(--sat)); right: calc(12px + var(--sar)); width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--line);
   background: rgba(20, 22, 50, .7); cursor: pointer; font-size: 14px; z-index: 2; }
 
 /* リザルト */
@@ -217,6 +225,51 @@ kbd { font-size: 10px; padding: 0 4px; border: 1px solid var(--line); border-rad
 .ed-bottom { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: 1px solid var(--line); }
 .ed-bottom input[type=range] { flex: 1; }
 .ed-bottom .row { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+
+/* 補正 */
+.set-h { margin: 18px 0 4px; font-size: 12px; color: var(--accent); letter-spacing: .08em; }
+.modal-box.calib { width: min(460px, 94vw); }
+.calib-pad { height: min(42vh, 230px); border-radius: 22px; display: grid; place-content: center; text-align: center; cursor: pointer; margin: 12px 0;
+  background: radial-gradient(circle, rgba(54, 226, 255, .22), rgba(162, 77, 255, .12) 60%, rgba(0, 0, 0, .25)); border: 2px solid rgba(54, 226, 255, .45);
+  touch-action: none; transition: transform .06s; }
+.calib-pad.hit { animation: padhit .18s ease-out; }
+@keyframes padhit { 0% { transform: scale(.96); background-color: rgba(255, 255, 255, .25); } 100% { transform: scale(1); } }
+.calib-msg { font-size: 44px; font-weight: 900; }
+.calib-sub { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.calib-dots { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.calib-dots i { width: 12px; height: 12px; border-radius: 50%; background: rgba(255, 255, 255, .15); }
+.calib-dots i.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.calib-result { margin: 12px 0 6px; font-size: 14px; line-height: 1.6; min-height: 1.6em; }
+.res-timing { margin-top: 14px; padding: 12px; border-radius: 12px; background: rgba(0, 0, 0, .25); font-size: 13px; line-height: 1.7; }
+.res-timing b { color: var(--text); }
+.hist { display: flex; align-items: flex-end; gap: 2px; height: 42px; margin: 8px 0 2px; position: relative; }
+.hist i { flex: 1; background: linear-gradient(180deg, #8fe8ff, #36a8ff); border-radius: 2px 2px 0 0; min-height: 1px; opacity: .85; }
+.hist::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: rgba(255, 255, 255, .6); }
+.hist-lbl { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); }
+
+/* 横向きスマホ (高さが低い) */
+@media (max-height: 520px) and (orientation: landscape) {
+  .topbar { padding-top: calc(6px + var(--sat)) !important; padding-bottom: 6px; }
+  .logo.small { font-size: 18px; }
+  .topbar .btn { padding: 6px 10px; font-size: 13px; }
+  .song-detail { padding: 12px 16px; gap: 10px; }
+  .jacket.big { width: 96px; height: 96px; font-size: 30px; border-radius: 14px; }
+  .detail-top { gap: 14px; align-items: center; }
+  .detail-top h1 { font-size: 22px; }
+  .detail-top .desc { display: none; }
+  .diff-btn { padding: 8px 10px; min-width: 90px; }
+  .diff-btn .dl { font-size: 26px; }
+  .play-row .btn.play { font-size: 18px; padding: 10px 30px; }
+  .song-card { padding: 7px; margin-bottom: 6px; }
+  .song-card .jacket { width: 46px; height: 46px; font-size: 16px; }
+  .modal-box { max-height: 96vh; padding: 14px; }
+  .modal-box.calib { width: min(640px, 94vw); }
+  .modal-box h3 { margin-bottom: 6px; }
+  .calib-pad { height: 30vh; margin: 6px 0; }
+  .calib-msg { font-size: 30px; }
+  .calib-result { margin: 6px 0 2px; font-size: 13px; }
+  .modal-box .btn-row { margin-top: 8px; }
+}
 
 @media (max-width: 760px) {
   .topbar { flex-wrap: wrap; padding: 10px 12px; }

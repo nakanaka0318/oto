@@ -11,7 +11,11 @@ const App = {
   async init() {
     Settings.load();
     this.editor = new Editor(this);
+    Calibrator.init(this);
     this._bindUI();
+    // iOS のピンチズーム等を抑止
+    document.addEventListener('gesturestart', e => e.preventDefault());
+    document.addEventListener('dblclick', e => { if (!e.target.closest('input, textarea')) e.preventDefault(); });
     try { await this.loadSongs(); } catch (e) { this.toast('保存データを読み込めませんでした: ' + e.message); this.loadBuiltins(); }
     window.addEventListener('resize', () => this.positionYT());
   },
@@ -48,6 +52,20 @@ const App = {
     const w = $('#yt-wrap'), r = this.ytSlot.getBoundingClientRect();
     if (r.width < 2) { w.style.left = '-10000px'; return; }
     w.style.left = r.left + 'px'; w.style.top = r.top + 'px'; w.style.width = r.width + 'px'; w.style.height = r.height + 'px';
+  },
+
+  // スマホ: 全画面 + 横向き固定 (ユーザー操作の直後に呼ぶ必要あり)
+  enterFullscreen() {
+    if (!Settings.data.fullscreen || !U.isTouch()) return;
+    const el = document.documentElement;
+    const lock = () => { try { const p = screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape'); if (p && p.catch) p.catch(() => {}); } catch (e) { /* 非対応 */ } };
+    if (document.fullscreenElement || document.webkitFullscreenElement) { lock(); return; }
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    try {
+      const p = req.call(el, { navigationUI: 'hide' });
+      if (p && p.then) p.then(lock).catch(() => {}); else lock();
+    } catch (e) { /* iPhone Safari などは非対応 */ }
   },
 
   decode(ab) {
@@ -217,6 +235,7 @@ const App = {
   },
 
   async play() {
+    this.enterFullscreen();
     const s = this.song(this.selId);
     const chart = this.chartsOf(s)[this.diff];
     if (!chart || !chart.notes || !chart.notes.length) { this.toast('この難易度の譜面がありません。エディタで作成してください'); return; }
@@ -250,6 +269,7 @@ const App = {
     else { this.placeYT('hidden'); this.show('scr-select'); this.renderSelect(); }
   },
   retry() {
+    this.enterFullscreen();
     $('#modal-pause').hidden = true;
     if (this.game) { this.game.destroy(); this.game = null; }
     this.engine.ensure();
@@ -265,10 +285,48 @@ const App = {
     if (!r.auto && !r.partial && !lp.fromEditor) {
       isNew = Best.submit(lp.song.id, lp.diff, r).isNew;
     }
-    this.renderResult(r, isNew);
+    this.renderResult(r, isNew, this.timingCorrection(r));
     this.show('scr-result');
   },
-  renderResult(r, isNew) {
+  /* プレイ結果からのオフセット自動補正 */
+  timingCorrection(r) {
+    const tm = r.timing;
+    if (r.auto || !tm || tm.n < 20) return tm && tm.n ? { tm, few: true } : null;
+    const ms = Math.round(tm.center * 1000);
+    const key = r.sourceKind === 'youtube' ? 'ytOffset' : 'offset';
+    if (Math.abs(ms) < 6) return { tm, ms, ok: true, key };
+    // 一度に大きく動かしすぎないよう 70% だけ反映
+    const delta = U.clamp(Math.round(ms * 0.7), -80, 80);
+    const c = { tm, ms, delta, key, prev: Settings.data[key] || 0, applied: false };
+    if (Settings.data.autoOffset) this.applyCorrection(c);
+    return c;
+  },
+  applyCorrection(c) {
+    Settings.data[c.key] = U.clamp(c.prev + c.delta, -400, 400);
+    Settings.save();
+    c.applied = true;
+  },
+  timingHTML(r, c) {
+    if (!c) return '';
+    const fmt = v => (v > 0 ? '+' : '') + v + 'ms';
+    const bins = new Array(25).fill(0);
+    (r.diffs || []).forEach(d => { const i = Math.round(d * 1000 / 10) + 12; if (i >= 0 && i < 25) bins[i]++; });
+    const mx = Math.max(1, ...bins);
+    const hist = `<div class="hist">${bins.map(b => `<i style="height:${Math.round(b / mx * 100)}%"></i>`).join('')}</div>
+      <div class="hist-lbl"><span>−120ms 早い</span><span>ジャスト</span><span>遅い +120ms</span></div>`;
+    const label = c.key === 'ytOffset' ? 'YouTube 追加補正' : 'オフセット';
+    let msg;
+    if (c.few) msg = `タイミング計測にはもう少しノーツが必要です (${c.tm.n}/20)`;
+    else if (c.ok) msg = `タイミング傾向 <b>${fmt(c.ms)}</b> (ばらつき ±${Math.round(c.tm.spread * 1000)}ms) — ズレはほぼありません 👍`;
+    else {
+      msg = `タイミング傾向 <b>${fmt(c.ms)} ${c.ms > 0 ? '遅め' : '早め'}</b> (ばらつき ±${Math.round(c.tm.spread * 1000)}ms)<br>`;
+      msg += c.applied
+        ? `${label}を <b>${fmt(c.delta)}</b> 自動補正しました (${fmt(c.prev)} → <b>${fmt(Settings.data[c.key])}</b>) <button class="btn sm" id="res-undo">元に戻す</button>`
+        : `<button class="btn sm primary" id="res-apply">${label}を ${fmt(c.delta)} 補正する</button>`;
+    }
+    return `<div class="res-timing">${msg}${hist}</div>`;
+  },
+  renderResult(r, isNew, corr) {
     const lp = this.lastPlay;
     const c = r.cnt;
     const badges = [r.ap ? '<span class="badge ap">ALL PERFECT</span>' : r.fc ? '<span class="badge fc">FULL COMBO</span>' : r.clear ? '<span class="badge clr">LIVE CLEAR</span>' : '<span class="badge clr">FAILED…</span>',
@@ -280,6 +338,7 @@ const App = {
         <div class="res-score"><div class="lbl">SCORE</div><div class="v" id="res-score">0</div><div class="res-badges">${badges}</div></div></div>
       <div class="jtable">${JUDGE_NAMES.map((n, i) => `<div class="jcell"><div class="n" style="color:${JUDGE_COLORS[i]}">${n}</div><div class="c">${c[i]}</div></div>`).join('')}</div>
       <div class="res-sub"><span>MAX COMBO <b>${r.maxCombo}</b> / ${r.total}</span><span>FAST <b>${r.fast}</b></span><span>LATE <b>${r.late}</b></span></div>
+      ${this.timingHTML(r, corr)}
       <div class="btn-row"><button class="btn primary" id="res-retry">↻ リトライ</button>
         <button class="btn" id="res-back">${lp.fromEditor ? '✎ エディタに戻る' : '♪ 選曲に戻る'}</button></div>`;
     const el = $('#res-score'), t0 = performance.now();
@@ -289,7 +348,15 @@ const App = {
       if (k < 1 && this.screen === 'scr-result') requestAnimationFrame(anim);
     };
     requestAnimationFrame(anim);
-    $('#res-retry').onclick = () => { this.engine.ensure(); this.startGame(this.lastPlay); };
+    $('#res-retry').onclick = () => { this.engine.ensure(); this.enterFullscreen(); this.startGame(this.lastPlay); };
+    if ($('#res-undo')) $('#res-undo').onclick = () => {
+      Settings.data[corr.key] = corr.prev; Settings.save(); corr.applied = false;
+      $('#res-undo').replaceWith(document.createTextNode('→ 元に戻しました'));
+    };
+    if ($('#res-apply')) $('#res-apply').onclick = () => {
+      this.applyCorrection(corr);
+      $('#res-apply').replaceWith(document.createTextNode(`→ 補正しました (現在 ${Settings.data[corr.key]}ms)`));
+    };
     $('#res-back').onclick = () => {
       if (lp.fromEditor) { this.show('scr-editor'); this.editor.activate(); }
       else { this.show('scr-select'); this.renderSelect(); }
@@ -470,11 +537,18 @@ const App = {
     };
     bindRange('set-speed', 'speed', v => v.toFixed(1));
     bindRange('set-offset', 'offset', v => (v > 0 ? '+' : '') + v);
+    bindRange('set-ytoffset', 'ytOffset', v => (v > 0 ? '+' : '') + v);
+    bindRange('set-touch', 'touchWide', v => v <= 0.4 ? '狭い' : v <= 1.2 ? '標準' : '広い');
+    const nudge = d => { S.offset = U.clamp((S.offset || 0) + d, -400, 400); Settings.save(); this.openSettings(); };
+    $('#set-offm').onclick = () => nudge(-5);
+    $('#set-offp').onclick = () => nudge(5);
+    $('#set-calib').onclick = () => Calibrator.open();
     bindRange('set-music', 'musicVol', v => Math.round(v * 100) + '%');
     bindRange('set-se', 'seVol', v => Math.round(v * 100) + '%');
     bindRange('set-size', 'noteSize', v => v.toFixed(1));
     const chk = (id, key) => { const el = $('#' + id); el.checked = !!S[key]; el.onchange = () => { S[key] = el.checked; Settings.save(); }; };
     chk('set-showkeys', 'showKeys'); chk('set-effects', 'effects'); chk('set-auto', 'auto');
+    chk('set-autooffset', 'autoOffset'); chk('set-fullscreen', 'fullscreen'); chk('set-vibrate', 'vibrate'); chk('set-low', 'lowQuality');
     const keysEl = $('#set-keys');
     const renderKeys = () => {
       keysEl.innerHTML = S.keys.map((k, i) => `<button data-i="${i}">${U.esc(k.replace(/^Key|^Digit/, ''))}</button>`).join('');
@@ -492,8 +566,14 @@ const App = {
     $('#modal-settings').hidden = false;
   },
 
+  refreshSettingsUI() { if (!$('#modal-settings').hidden) this.openSettings(); },
+
   _bindUI() {
-    $('#btn-start').onclick = () => { this.engine.ensure(); this.show('scr-select'); };
+    $('#btn-start').onclick = () => {
+      this.engine.ensure(); this.enterFullscreen(); this.show('scr-select');
+      if (!Settings.data.calibrated) setTimeout(() => this.toast('🎧 初めての方は右上の「音ズレ補正」がおすすめです'), 600);
+    };
+    $('#btn-calib').onclick = () => Calibrator.open();
     $('#btn-settings').onclick = () => this.openSettings();
     $('#set-close').onclick = () => { $('#modal-settings').hidden = true; if (this.screen === 'scr-select') this.renderDetail(); };
     $('#btn-import').onclick = () => this.openImport();
@@ -531,7 +611,7 @@ const App = {
     };
     $('#yt-setoff').onclick = () => {
       if (!this.ytSrc) return;
-      const t = Math.max(0, this.ytSrc.time() - (Settings.data.offset || 0) / 1000);
+      const t = Math.max(0, this.ytSrc.time() - Settings.offsetFor('youtube'));
       $('#yt-offset').value = t.toFixed(3);
     };
     $('#yt-save-auto').onclick = () => this.ytSave(true);

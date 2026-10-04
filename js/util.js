@@ -96,3 +96,16 @@ const DIFF_LABEL = { hard: 'HARD', expert: 'EXPERT', master: 'MASTER' };
 
 const $ = s => document.querySelector(s);
 const $$ = s => Array.from(document.querySelectorAll(s));
+
+// 外れ値に強い中心値 (タイミング補正用): 中央値 → MAD で外れ値除去 → 平均
+U.robustCenter = function (arr) {
+  if (!arr.length) return { center: 0, spread: 0, n: 0 };
+  const med = U.percentile(arr, 0.5);
+  const mad = U.percentile(arr.map(v => Math.abs(v - med)), 0.5) * 1.4826;
+  const lim = Math.max(0.03, mad * 3);
+  const kept = arr.filter(v => Math.abs(v - med) <= lim);
+  const mean = kept.reduce((a, b) => a + b, 0) / kept.length;
+  const sd = Math.sqrt(kept.reduce((a, b) => a + (b - mean) * (b - mean), 0) / kept.length);
+  return { center: mean, spread: sd, n: kept.length };
+};
+U.isTouch = () => matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;

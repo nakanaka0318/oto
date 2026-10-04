@@ -21,7 +21,8 @@ class Game {
     this.startAt = o.startAt || 0;
     this.onEnd = o.onEnd || (() => {}); this.onPause = o.onPause || (() => {});
     this.ytBg = this.source.kind === 'youtube';
-    this.offset = (this.S.offset || 0) / 1000;
+    this.offset = Settings.offsetFor(this.source.kind);
+    this.diffs = []; this.low = !!this.S.lowQuality;
     this.visible = 0.25 + (12.5 - U.clamp(this.S.speed, 1, 12)) * 0.2;
     this.notes = (o.chart.notes || []).filter(n => n.t >= this.startAt - 1e-6).map((n, i) => ({
       ...n, id: i, hj: null, tj: null, st: n.type === 'hold' ? 'pending' : null, done: false, claimed: null,
@@ -56,9 +57,14 @@ class Game {
     this.cv.addEventListener('pointercancel', this._onUp);
     this.cv.addEventListener('contextmenu', this._prevent);
     this.raf = requestAnimationFrame(this._loop);
+    this.lockWake();
+  }
+  async lockWake() {
+    try { if (navigator.wakeLock) this.wake = await navigator.wakeLock.request('screen'); } catch (e) { /* 非対応 */ }
   }
   destroy() {
     this.running = false;
+    if (this.wake) { this.wake.release().catch(() => {}); this.wake = null; }
     cancelAnimationFrame(this.raf);
     try { this.source.pause(); } catch (e) { /* ignore */ }
     window.removeEventListener('resize', this._onResize);
@@ -81,6 +87,7 @@ class Game {
   resume() {
     if (!this.paused) return;
     this.paused = false;
+    if (!this.wake) this.lockWake();
     const back = Math.max(this.source.pos - 1.5, this.ytBg ? 0 : -2);
     this.source.play(back);
   }
@@ -104,7 +111,7 @@ class Game {
       try { this.cv.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
       const tt = this.time(e.timeStamp);
       const lp = this.laneAt(e.clientX, e.clientY);
-      const p = { id: e.pointerId, key: false, x: e.clientX, y: e.clientY, lp, ax: e.clientX, ay: e.clientY, at: performance.now(), flick: null };
+      const p = { id: e.pointerId, key: false, touch: e.pointerType !== 'mouse', x: e.clientX, y: e.clientY, lp, ax: e.clientX, ay: e.clientY, at: performance.now(), flick: null };
       this.ptrs.set(e.pointerId, p);
       this.press(p, tt);
     };
@@ -155,8 +162,12 @@ class Game {
   time(perf) { return this.source.timeAt(perf) - this.offset; }
 
   resize() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = this.low ? 1 : Math.min(2, window.devicePixelRatio || 1);
     const w = window.innerWidth, h = window.innerHeight;
+    // ノッチ等のセーフエリア
+    const cs = getComputedStyle(document.documentElement);
+    const inset = k => parseFloat(cs.getPropertyValue(k)) || 0;
+    this.safe = { t: inset('--sat'), r: inset('--sar'), b: inset('--sab'), l: inset('--sal') };
     this.cv.width = Math.round(w * dpr); this.cv.height = Math.round(h * dpr);
     this.cv.style.width = w + 'px'; this.cv.style.height = h + 'px';
     this.g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -167,7 +178,7 @@ class Game {
     this.hwJ = Math.min(w * (w < h ? 0.47 : 0.42), h * 0.88);
     this.D = (this.yJ - this.vpY) / (h * 0.04 - this.vpY) - 1;
     this.noteH = Math.max(14, h * 0.046) * (this.S.noteSize || 1);
-    this.flickDist = Math.max(14, h * 0.028);
+    this.flickDist = Math.max(10, Math.min(w, h) * 0.034);
   }
   proj(p) { const s = 1 / (1 + this.D * p); return { s, y: this.vpY + (this.yJ - this.vpY) * s }; }
   xAt(lp, s) { return this.cx + (lp / 6 - 1) * this.hwJ * s; }
@@ -188,17 +199,22 @@ class Game {
   /* ---------- 判定 ---------- */
   judgeOf(d) { d = Math.abs(d); return d <= WINDOWS[0] ? 0 : d <= WINDOWS[1] ? 1 : d <= WINDOWS[2] ? 2 : d <= WINDOWS[3] ? 3 : 4; }
 
+  touchTol(p) { return p.touch ? 0.75 + 0.5 * (this.S.touchWide ?? 1) : 0.75; }
   press(p, tt) {
-    const range = this.ptrRange(p, 0.75);
-    let hit = null;
+    const range = this.ptrRange(p, this.touchTol(p));
+    let hit = null, direct = null;
     for (let i = this.scan; i < this.notes.length; i++) {
       const n = this.notes[i];
       if (n.t - tt > WINDOWS[3]) break;
       if (n.done || n.hj != null || n.claimed != null) continue;
       if (tt - n.t > WINDOWS[3]) continue;
       if (!Game.overlap(range, [n.lane, n.lane + n.w])) continue;
-      hit = n; break;
+      if (!hit) hit = n;
+      // 指の真下にあるノーツを優先 (判定幅を広げた時の誤爆防止)
+      if (!direct && !p.key && p.lp >= n.lane && p.lp <= n.lane + n.w && Math.abs(n.t - tt) <= WINDOWS[1]) direct = n;
+      if (hit && (p.key || direct)) break;
     }
+    if (direct && hit && !(p.lp >= hit.lane && p.lp <= hit.lane + hit.w)) hit = direct;
     if (!hit) return;
     if (hit.type === 'flick' && !p.key) { hit.claimed = p.id; p.flick = hit; return; }
     this.applyJudge(hit, 'head', this.judgeOf(tt - hit.t), tt - hit.t);
@@ -217,7 +233,7 @@ class Game {
       }
       if (n.done || tt - n.t > WINDOWS[3]) { n.claimed = null; p.flick = null; }
     }
-    const range = this.ptrRange(p, 0.75);
+    const range = this.ptrRange(p, this.touchTol(p));
     for (let i = this.scan; i < this.notes.length; i++) {
       const n = this.notes[i];
       if (n.t - tt > WINDOWS[3]) break;
@@ -248,7 +264,7 @@ class Game {
 
   covered(n, t) {
     const r = this.laneRangeAt(n, U.clamp(t, n.t, n.end));
-    for (const p of this.ptrs.values()) if (Game.overlap(this.ptrRange(p, 1.3), r)) return true;
+    for (const p of this.ptrs.values()) if (Game.overlap(this.ptrRange(p, p.touch ? this.touchTol(p) + 0.6 : 1.3), r)) return true;
     return false;
   }
 
@@ -270,11 +286,13 @@ class Game {
     else if (j === 3) this.life = Math.max(0, this.life - 35);
     if (j > 0 && j < 4) { if (diff < 0) this.fast++; else this.late++; }
     this.jDisp = { j, at: performance.now(), fl: j > 0 && j < 4 ? (diff < 0 ? 'FAST' : 'LATE') : '' };
+    if (!this.auto && part === 'head' && j < 4 && n.type !== 'flick') this.diffs.push(diff);
+    if (j < 4 && this.S.vibrate && !this.auto && navigator.vibrate) navigator.vibrate(n.crit || n.type === 'flick' ? 18 : 8);
     if (j < 4) {
       const lane = part === 'tail' ? n.endLane : n.lane;
       const isFlick = n.type === 'flick' || (part === 'tail' && n.endFlick);
       const kind = n.crit ? 'crit' : isFlick ? 'flick' : n.type === 'hold' ? 'hold' : 'tap';
-      if (this.S.effects !== false) this.fx.push({ lp: lane + n.w / 2, w: n.w, kind, j, at: performance.now(), seed: Math.random() });
+      if (this.S.effects !== false && !(this.low && this.fx.length > 6)) this.fx.push({ lp: lane + n.w / 2, w: n.w, kind, j, at: performance.now(), seed: Math.random() });
       const se = n.crit ? 'crit' : isFlick ? 'flick' : j === 0 ? 'perfect' : j === 1 ? 'great' : 'good';
       this.engine.playSE(se, 1);
     }
@@ -324,7 +342,8 @@ class Game {
     const rank = score >= 980000 ? 'SS' : score >= 940000 ? 'S' : score >= 880000 ? 'A' : score >= 780000 ? 'B' : score >= 650000 ? 'C' : 'D';
     return {
       score, rank, cnt: c.slice(), maxCombo: this.maxCombo, total: this.total, fast: this.fast, late: this.late,
-      fc: all && c[2] + c[3] + c[4] === 0, ap: all && c[0] === this.total, clear: this.life > 0, auto: this.auto, partial: this.startAt > 0,
+      fc: all && c[2] + c[3] + c[4] === 0, ap: all && c[0] === this.total,
+      timing: U.robustCenter(this.diffs), diffs: this.diffs.slice(), sourceKind: this.source.kind, clear: this.life > 0, auto: this.auto, partial: this.startAt > 0,
     };
   }
   finish() {
@@ -411,7 +430,7 @@ class Game {
     const g = this.g, y = this.yJ;
     const x0 = this.xAt(0, 1), x1 = this.xAt(12, 1);
     g.save();
-    g.shadowColor = 'rgba(140,220,255,0.9)'; g.shadowBlur = 14;
+    if (!this.low) { g.shadowColor = 'rgba(140,220,255,0.9)'; g.shadowBlur = 14; }
     const lg = g.createLinearGradient(x0, 0, x1, 0);
     lg.addColorStop(0, 'rgba(140,220,255,0.6)'); lg.addColorStop(0.5, 'rgba(255,255,255,0.95)'); lg.addColorStop(1, 'rgba(140,220,255,0.6)');
     g.strokeStyle = lg; g.lineWidth = 3;
@@ -493,7 +512,7 @@ class Game {
     const y = pr.y;
     const r = Math.min(h / 2, (xr - xl) / 2);
     g.save();
-    if (glow) { g.shadowColor = colors[1]; g.shadowBlur = 18; }
+    if (glow && !this.low) { g.shadowColor = colors[1]; g.shadowBlur = 18; }
     const grd = g.createLinearGradient(0, y - h / 2, 0, y + h / 2);
     grd.addColorStop(0, colors[0]); grd.addColorStop(1, colors[1]);
     g.fillStyle = grd;
@@ -557,7 +576,7 @@ class Game {
       // 火花
       const rnd = U.rng(Math.floor(f.seed * 1e9));
       g.fillStyle = `rgba(255,255,255,${a})`;
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0, ns = this.low ? 0 : 7; i < ns; i++) {
         const ang = -Math.PI * (0.1 + rnd() * 0.8);
         const dist = this.noteH * (1 + k * (3 + rnd() * 4));
         const sx = x + Math.cos(ang) * dist * 1.4, sy = y + Math.sin(ang) * dist;
@@ -602,28 +621,30 @@ class Game {
     const score = Math.round(1000000 * this.sumW / this.total);
     g.textAlign = 'left'; g.textBaseline = 'top';
     g.fillStyle = 'rgba(255,255,255,0.6)'; g.font = `700 ${fs * 0.75}px system-ui, sans-serif`;
-    g.fillText('SCORE', 16, 14);
+    const L = 16 + this.safe.l, T = 14 + this.safe.t;
+    g.fillText('SCORE', L, T);
     g.fillStyle = '#fff'; g.font = `800 ${fs * 1.6}px system-ui, sans-serif`;
-    g.fillText(String(score).padStart(7, '0'), 16, 14 + fs * 0.9);
+    g.fillText(String(score).padStart(7, '0'), L, T + fs * 0.9);
     // ライフ
-    const lw = Math.min(220, W * 0.25), ly = 14 + fs * 2.8;
-    g.fillStyle = 'rgba(255,255,255,0.15)'; this.rrect(16, ly, lw, 8, 4); g.fill();
-    g.fillStyle = this.life > 300 ? '#5ef0a0' : '#ff5a6e'; this.rrect(16, ly, lw * this.life / 1000, 8, 4); g.fill();
+    const lw = Math.min(220, W * 0.25), ly = T + fs * 2.8;
+    g.fillStyle = 'rgba(255,255,255,0.15)'; this.rrect(L, ly, lw, 8, 4); g.fill();
+    g.fillStyle = this.life > 300 ? '#5ef0a0' : '#ff5a6e'; this.rrect(L, ly, lw * this.life / 1000, 8, 4); g.fill();
     g.fillStyle = 'rgba(255,255,255,0.7)'; g.font = `600 ${fs * 0.7}px system-ui, sans-serif`;
-    g.fillText('LIFE ' + this.life, 16, ly + 12);
+    g.fillText('LIFE ' + this.life, L, ly + 12);
     // 曲名 (右上)
     g.textAlign = 'right';
-    const rx = W - 76;
+    const rx = W - 76 - this.safe.r;
     g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = `700 ${fs * 0.85}px system-ui, sans-serif`;
-    g.fillText(this.info.title || '', rx, 16, Math.max(80, W * 0.25));
+    const ty = 16 + this.safe.t;
+    g.fillText(this.info.title || '', rx, ty, Math.max(80, W * 0.25));
     if (this.info.diff) {
       g.font = `800 ${fs * 0.7}px system-ui, sans-serif`;
       g.fillStyle = { hard: '#ffc233', expert: '#ff4d6d', master: '#c06bff' }[this.info.diff] || '#fff';
-      g.fillText(DIFF_LABEL[this.info.diff] + ' ' + (this.info.level || ''), rx, 16 + fs * 1.15);
+      g.fillText(DIFF_LABEL[this.info.diff] + ' ' + (this.info.level || ''), rx, ty + fs * 1.15);
     }
     if (this.auto) {
       g.fillStyle = 'rgba(255,220,120,0.9)'; g.font = `800 ${fs * 0.75}px system-ui, sans-serif`;
-      g.fillText('AUTO PLAY', rx, 16 + fs * 2.2);
+      g.fillText('AUTO PLAY', rx, ty + fs * 2.2);
     }
     g.textAlign = 'center';
     // 判定表示
@@ -665,7 +686,7 @@ class Game {
       const label = r.ap && !this.auto ? 'ALL PERFECT' : r.fc && !this.auto ? 'FULL COMBO' : 'LIVE CLEAR';
       g.save();
       g.fillStyle = r.ap ? '#ffe066' : r.fc ? '#ff8ae2' : '#9fdcff';
-      g.shadowColor = g.fillStyle; g.shadowBlur = 24;
+      if (!this.low) { g.shadowColor = g.fillStyle; g.shadowBlur = 24; }
       g.font = `900 ${fs * 3}px system-ui, sans-serif`; g.textBaseline = 'middle';
       g.fillText(label, W / 2, H * 0.5);
       g.restore();

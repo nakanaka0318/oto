@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <meta name="theme-color" content="#0a0b1e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OTO STAGE">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>OTO STAGE</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -28,6 +35,7 @@
     <div class="logo small">OTO<span>STAGE</span></div>
     <div class="spacer"></div>
     <button id="btn-import" class="btn">＋ 曲を追加</button>
+    <button id="btn-calib" class="btn">🎧 音ズレ補正</button>
     <button id="btn-settings" class="btn">⚙ 設定</button>
   </header>
   <div class="select-body">
@@ -188,16 +196,45 @@
   <div class="modal-box">
     <h3>設定</h3>
     <div class="set-row"><label>ノーツ速度</label><input type="range" id="set-speed" min="1" max="12" step="0.5"><span id="set-speed-v"></span></div>
-    <div class="set-row"><label>オフセット(ms)</label><input type="range" id="set-offset" min="-250" max="250" step="5"><span id="set-offset-v"></span></div>
-    <p class="tiny">ノーツより音が遅れて聞こえる → ＋ / 早く聞こえる → − (Bluetoothイヤホンは +150〜250 目安)</p>
+    <h4 class="set-h">タイミング</h4>
+    <div class="set-row"><label>オフセット(ms)</label><input type="range" id="set-offset" min="-400" max="400" step="1"><span id="set-offset-v"></span></div>
+    <div class="set-row"><label></label><button class="btn sm" id="set-calib">🎧 音ズレ自動補正を開始</button>
+      <button class="btn sm" id="set-offm">−5</button><button class="btn sm" id="set-offp">＋5</button></div>
+    <div class="set-row"><label>YouTube 追加補正</label><input type="range" id="set-ytoffset" min="-400" max="400" step="1"><span id="set-ytoffset-v"></span></div>
+    <div class="set-row check"><label><input type="checkbox" id="set-autooffset"> プレイ結果から自動で補正する</label></div>
+    <p class="tiny">音が遅れて聞こえる → ＋ / 早く聞こえる → −。「音ズレ自動補正」でクリック音に合わせて16回タップすると自動で設定されます。プレイ後もタイミングの傾向から少しずつ自動調整します (YouTube は別枠で調整)。</p>
+    <h4 class="set-h">表示・操作</h4>
     <div class="set-row"><label>曲の音量</label><input type="range" id="set-music" min="0" max="1" step="0.05"><span id="set-music-v"></span></div>
     <div class="set-row"><label>効果音の音量</label><input type="range" id="set-se" min="0" max="1" step="0.05"><span id="set-se-v"></span></div>
     <div class="set-row"><label>ノーツの大きさ</label><input type="range" id="set-size" min="0.6" max="1.6" step="0.1"><span id="set-size-v"></span></div>
+    <div class="set-row"><label>タッチ判定の広さ</label><input type="range" id="set-touch" min="0" max="2" step="0.25"><span id="set-touch-v"></span></div>
     <div class="set-row"><label>キー配置</label><div class="keys" id="set-keys"></div></div>
     <div class="set-row check"><label><input type="checkbox" id="set-showkeys"> キー表示</label>
       <label><input type="checkbox" id="set-effects"> エフェクト</label>
       <label><input type="checkbox" id="set-auto"> オートプレイ</label></div>
+    <h4 class="set-h">スマホ</h4>
+    <div class="set-row check"><label><input type="checkbox" id="set-fullscreen"> プレイ時に全画面・横向き</label>
+      <label><input type="checkbox" id="set-vibrate"> タップで振動 (Android)</label>
+      <label><input type="checkbox" id="set-low"> 軽量モード (カクつく時に)</label></div>
+    <p class="tiny">iPhone は Safari の共有メニュー →「ホーム画面に追加」から起動すると全画面で遊べます。</p>
     <div class="btn-row"><button class="btn primary" id="set-close">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 音ズレ自動補正 -->
+<div id="modal-calib" class="modal" hidden>
+  <div class="modal-box calib">
+    <h3>🎧 音ズレ自動補正</h3>
+    <p class="tiny">プレイ時と同じイヤホン/スピーカーで、クリック音に合わせて下のパッド (またはキー) を <b>16回</b> タップしてください。音が聞こえてからタップまでのズレを測り、自動でオフセットを設定します。</p>
+    <div class="calib-pad" id="calib-pad"><div class="calib-msg" id="calib-msg">タップしてスタート</div><div class="calib-sub" id="calib-sub"></div></div>
+    <div class="calib-dots" id="calib-dots"></div>
+    <div class="calib-result" id="calib-result"></div>
+    <label class="row tiny"><input type="checkbox" id="calib-auto"> プレイ結果からも自動で微調整する</label>
+    <div class="btn-row">
+      <button class="btn primary" id="calib-start">スタート</button>
+      <button class="btn" id="calib-undo" hidden>元に戻す</button>
+      <button class="btn ghost" id="calib-close">閉じる</button>
+    </div>
   </div>
 </div>
 
@@ -230,6 +267,7 @@
 <script src="js/analyzer.js"></script>
 <script src="js/game.js"></script>
 <script src="js/editor.js"></script>
+<script src="js/calibrate.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

@@ -17,6 +17,8 @@ class AudioEngine {
       this.applyVolumes();
     }
     if (this.ctx.state === 'suspended') this.ctx.resume();
+    // iPhone のマナーモードでも音が鳴るように
+    try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { /* ignore */ }
     return this.ctx;
   }
 
@@ -64,6 +66,9 @@ class AudioEngine {
     this.se.crit = this._buf(0.3, (t, nz) =>
       (Math.sin(TAU * 2093 * t) * 0.35 + Math.sin(TAU * 3136 * t) * 0.25 + Math.sin(TAU * 1568 * t) * 0.3) * Math.exp(-t * 14) + nz() * Math.exp(-t * 250) * 0.35);
     this.se.tick = this._buf(0.05, (t) => Math.sin(TAU * 2600 * t) * Math.exp(-t * 90) * 0.35);
+    // メトロノーム (立ち上がりが鋭い = 補正精度が上がる)
+    this.se.click = this._buf(0.06, (t, nz) => (Math.sin(TAU * 1200 * t) * 0.7 + nz() * 0.3) * Math.exp(-t * 80) * 0.9);
+    this.se.clickHi = this._buf(0.06, (t, nz) => (Math.sin(TAU * 1800 * t) * 0.7 + nz() * 0.3) * Math.exp(-t * 80) * 1.0);
   }
 
   playSE(name, vol = 1, when = 0) {

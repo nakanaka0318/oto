@@ -306,7 +306,7 @@ class Editor {
     const col = keys.indexOf(e.code);
     if (this.rec && col >= 0 && !e.ctrlKey && !e.metaKey) {
       e.preventDefault();
-      if (!e.repeat && this.source.playing && this.recDown[col] == null) this.recDown[col] = this.source.time() - (Settings.data.offset || 0) / 1000;
+      if (!e.repeat && this.source.playing && this.recDown[col] == null) this.recDown[col] = this.source.time() - Settings.offsetFor(this.source.kind);
       return;
     }
     const mod = e.ctrlKey || e.metaKey;
@@ -328,7 +328,7 @@ class Editor {
     const col = Settings.data.keys.indexOf(e.code);
     if (col < 0 || this.recDown[col] == null) return;
     const t0 = this.recDown[col]; delete this.recDown[col];
-    const t1 = this.source.time() - (Settings.data.offset || 0) / 1000;
+    const t1 = this.source.time() - Settings.offsetFor(this.source.kind);
     const w = this.width;
     const lane = U.clamp(Math.round(col * 2 + 1 - w / 2), 0, 12 - w);
     const s0 = this.snapT(t0), s1 = this.snapT(t1);
