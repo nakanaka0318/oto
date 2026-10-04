@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#0a0b1e">
+<title>OTO STAGE</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<!-- YouTube プレイヤー (画面に応じて位置を切り替え) -->
+<div id="yt-wrap" class="yt-hidden"><div id="yt-player"></div></div>
+
+<!-- タイトル -->
+<section id="scr-title" class="screen active">
+  <div class="title-bg"></div>
+  <div class="title-box">
+    <div class="logo">OTO<span>STAGE</span></div>
+    <div class="logo-sub">RHYTHM GAME — AI作曲3曲収録 / 好きな曲で譜面を作って遊べる</div>
+    <button id="btn-start" class="btn primary big">TAP TO START</button>
+    <p class="hint">タッチ・マウス・キーボード (S D F J K L) で遊べます</p>
+  </div>
+</section>
+
+<!-- 選曲 -->
+<section id="scr-select" class="screen">
+  <header class="topbar">
+    <div class="logo small">OTO<span>STAGE</span></div>
+    <div class="spacer"></div>
+    <button id="btn-import" class="btn">＋ 曲を追加</button>
+    <button id="btn-settings" class="btn">⚙ 設定</button>
+  </header>
+  <div class="select-body">
+    <div class="song-list" id="song-list"></div>
+    <div class="song-detail" id="song-detail"></div>
+  </div>
+</section>
+
+<!-- 曲の追加 -->
+<section id="scr-import" class="screen">
+  <header class="topbar">
+    <button class="btn ghost" id="imp-back">← 戻る</button>
+    <h2>曲を追加して譜面を作る</h2>
+  </header>
+  <div class="import-body">
+    <div class="tabs">
+      <button class="tab active" data-tab="file">🎵 音声 / 動画ファイル</button>
+      <button class="tab" data-tab="yt">▶ YouTube</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-file">
+      <p class="note">MP3 / WAV / OGG / M4A / MP4 などのファイルを読み込み、BPM・リズムを解析して <b>HARD / EXPERT / MASTER</b> の譜面を自動生成します。生成後はエディタで自由に修正できます。</p>
+      <label class="drop" id="drop">
+        <input type="file" id="imp-file" accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.mp4,.webm">
+        <span id="drop-text">ここにファイルをドロップ / クリックして選択</span>
+      </label>
+      <div class="form-row"><label>曲名</label><input type="text" id="imp-title" placeholder="曲名"></div>
+      <div class="form-row"><label>アーティスト</label><input type="text" id="imp-artist" placeholder="アーティスト"></div>
+      <div class="form-row"><label>BPM (任意)</label><input type="number" id="imp-bpm" placeholder="自動検出" min="40" max="300" step="0.01"></div>
+      <div class="form-row check"><label><input type="checkbox" id="imp-open-editor"> 保存後に譜面エディタを開く</label></div>
+      <button class="btn primary" id="imp-go">解析して譜面を作成</button>
+      <div class="progress" id="imp-prog" hidden><div></div><span></span></div>
+    </div>
+
+    <div class="tab-panel" id="tab-yt">
+      <p class="note">YouTube の動画を公式の埋め込みプレイヤーで再生して遊びます（動画は背景に表示）。YouTube の音声は解析できないため、<b>BPM と1拍目の位置</b>から譜面を自動生成します。エディタの<b>リアルタイム録音</b>で曲に合わせて叩いて譜面を作ることもできます。</p>
+      <div class="form-row"><label>URL</label><input type="text" id="yt-url" placeholder="https://www.youtube.com/watch?v=..."><button class="btn" id="yt-load">読み込み</button></div>
+      <div class="yt-area" id="yt-area" hidden>
+        <div class="yt-slot" id="yt-slot-import"></div>
+        <div class="yt-form">
+          <div class="form-row"><label>曲名</label><input type="text" id="yt-title"></div>
+          <div class="form-row"><label>アーティスト</label><input type="text" id="yt-artist"></div>
+          <div class="form-row"><label>再生</label>
+            <button class="btn" id="yt-play">▶ 再生</button><button class="btn" id="yt-pause">⏸ 停止</button>
+            <span class="mono" id="yt-time">0:00.00</span>
+          </div>
+          <div class="form-row"><label>BPM</label><input type="number" id="yt-bpm" value="120" min="40" max="300" step="0.01">
+            <button class="btn" id="yt-tap">TAP</button><span class="mono small" id="yt-tapinfo">曲に合わせて TAP を連打</span></div>
+          <div class="form-row"><label>1拍目(秒)</label><input type="number" id="yt-offset" value="0" step="0.01">
+            <button class="btn" id="yt-setoff">現在位置を1拍目に</button></div>
+          <div class="form-row"><label>ヒント</label>
+            <span class="small">曲の最初の強拍で「現在位置を1拍目に」を押すとズレが少なくなります</span></div>
+          <div class="btn-row">
+            <button class="btn primary" id="yt-save-auto">譜面を自動生成して保存</button>
+            <button class="btn" id="yt-save-edit">保存してエディタで作る</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="legal">※ 取り込んだファイルはこの端末のブラウザ内(IndexedDB)にのみ保存されます。著作権のある楽曲は個人で楽しむ範囲でご利用ください。YouTube は公式埋め込みプレイヤーで再生し、音声のダウンロードは行いません。</p>
+  </div>
+</section>
+
+<!-- ゲーム -->
+<section id="scr-game" class="screen">
+  <canvas id="game-canvas"></canvas>
+  <button id="btn-pause" class="pause-btn" aria-label="一時停止">❚❚</button>
+</section>
+
+<!-- リザルト -->
+<section id="scr-result" class="screen">
+  <div class="result-box" id="result-box"></div>
+</section>
+
+<!-- 譜面エディタ -->
+<section id="scr-editor" class="screen">
+  <header class="ed-top">
+    <button class="btn ghost" id="ed-back">← 戻る</button>
+    <div class="ed-title" id="ed-title"></div>
+    <div class="ed-diffs" id="ed-diffs">
+      <button data-diff="hard" class="d-hard">HARD</button>
+      <button data-diff="expert" class="d-expert">EXPERT</button>
+      <button data-diff="master" class="d-master">MASTER</button>
+    </div>
+    <label class="ed-lv">Lv <input type="number" id="ed-level" min="1" max="40"></label>
+    <div class="spacer"></div>
+    <button class="btn" id="ed-undo" title="元に戻す (Ctrl+Z)">↶</button>
+    <button class="btn" id="ed-test">▶ ここからテスト</button>
+    <button class="btn primary" id="ed-save">保存</button>
+  </header>
+  <div class="ed-body">
+    <aside class="ed-side">
+      <div class="yt-slot small" id="yt-slot-editor" hidden></div>
+      <div class="ed-group">
+        <h4>ツール</h4>
+        <div class="tools" id="ed-tools">
+          <button data-tool="tap" class="active">タップ<kbd>1</kbd></button>
+          <button data-tool="flick">フリック<kbd>2</kbd></button>
+          <button data-tool="hold">ロング<kbd>3</kbd></button>
+          <button data-tool="erase">消去<kbd>4</kbd></button>
+          <button data-tool="pan">移動<kbd>5</kbd></button>
+        </div>
+        <label class="row"><input type="checkbox" id="ed-crit"> クリティカル <kbd>C</kbd></label>
+        <label class="row">幅 <input type="range" id="ed-width" min="1" max="12" value="3"> <span id="ed-width-v">3</span></label>
+        <label class="row">フリック方向
+          <select id="ed-dir"><option value="up">↑ 上</option><option value="left">↖ 左上</option><option value="right">↗ 右上</option></select></label>
+        <label class="row"><input type="checkbox" id="ed-endflick"> ロング終点をフリックに</label>
+        <p class="tiny">ロング: ドラッグで終点 (左右に動かすとスライド)<br>右クリック: 削除 / ホイール: スクロール</p>
+      </div>
+      <div class="ed-group">
+        <h4>グリッド</h4>
+        <label class="row">スナップ
+          <select id="ed-snap">
+            <option value="4">4分</option><option value="8">8分</option><option value="12">12分(3連)</option>
+            <option value="16" selected>16分</option><option value="24">24分</option><option value="32">32分</option>
+          </select></label>
+        <label class="row">拡大 <input type="range" id="ed-zoom" min="80" max="1200" value="320"></label>
+      </div>
+      <div class="ed-group">
+        <h4>テンポ</h4>
+        <label class="row">BPM <input type="number" id="ed-bpm" step="0.01" min="30" max="400"></label>
+        <label class="row">1拍目(秒) <input type="number" id="ed-offset" step="0.001"></label>
+        <div class="row"><button class="btn sm" id="ed-tapbpm">TAPでBPM</button><span class="tiny" id="ed-tapinfo"></span></div>
+        <div class="row"><button class="btn sm" id="ed-setoff">現在位置を1拍目に</button></div>
+      </div>
+      <div class="ed-group">
+        <h4>リアルタイム録音</h4>
+        <button class="btn sm" id="ed-rec">● 録音 OFF</button>
+        <p class="tiny">ON にして再生し、曲に合わせてキー (S D F J K L) を叩くとノーツが置かれます。長押しでロング。</p>
+      </div>
+      <div class="ed-group">
+        <h4>譜面</h4>
+        <div class="row wrap">
+          <button class="btn sm" id="ed-auto">自動生成</button>
+          <select id="ed-copyfrom"><option value="">他難易度からコピー…</option><option value="hard">HARD</option><option value="expert">EXPERT</option><option value="master">MASTER</option></select>
+          <button class="btn sm danger" id="ed-clear">全消去</button>
+        </div>
+        <div class="row wrap">
+          <button class="btn sm" id="ed-export">JSON書き出し</button>
+          <label class="btn sm">JSON読み込み<input type="file" id="ed-import" accept=".json,application/json" hidden></label>
+        </div>
+        <p class="tiny" id="ed-stats"></p>
+      </div>
+    </aside>
+    <div class="ed-main" id="ed-main"><canvas id="ed-canvas"></canvas></div>
+  </div>
+  <footer class="ed-bottom">
+    <button class="btn" id="ed-play">▶</button>
+    <span class="mono" id="ed-time">0:00.00</span>
+    <input type="range" id="ed-seek" min="0" max="1000" value="0">
+    <select id="ed-rate"><option value="1">x1.0</option><option value="0.75">x0.75</option><option value="0.5">x0.5</option></select>
+    <label class="row"><input type="checkbox" id="ed-ticks" checked> ノーツ音</label>
+  </footer>
+</section>
+
+<!-- 設定 -->
+<div id="modal-settings" class="modal" hidden>
+  <div class="modal-box">
+    <h3>設定</h3>
+    <div class="set-row"><label>ノーツ速度</label><input type="range" id="set-speed" min="1" max="12" step="0.5"><span id="set-speed-v"></span></div>
+    <div class="set-row"><label>オフセット(ms)</label><input type="range" id="set-offset" min="-250" max="250" step="5"><span id="set-offset-v"></span></div>
+    <p class="tiny">ノーツより音が遅れて聞こえる → ＋ / 早く聞こえる → − (Bluetoothイヤホンは +150〜250 目安)</p>
+    <div class="set-row"><label>曲の音量</label><input type="range" id="set-music" min="0" max="1" step="0.05"><span id="set-music-v"></span></div>
+    <div class="set-row"><label>効果音の音量</label><input type="range" id="set-se" min="0" max="1" step="0.05"><span id="set-se-v"></span></div>
+    <div class="set-row"><label>ノーツの大きさ</label><input type="range" id="set-size" min="0.6" max="1.6" step="0.1"><span id="set-size-v"></span></div>
+    <div class="set-row"><label>キー配置</label><div class="keys" id="set-keys"></div></div>
+    <div class="set-row check"><label><input type="checkbox" id="set-showkeys"> キー表示</label>
+      <label><input type="checkbox" id="set-effects"> エフェクト</label>
+      <label><input type="checkbox" id="set-auto"> オートプレイ</label></div>
+    <div class="btn-row"><button class="btn primary" id="set-close">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 一時停止 -->
+<div id="modal-pause" class="modal" hidden>
+  <div class="modal-box center">
+    <h3>PAUSE</h3>
+    <button class="btn primary big" id="pz-resume">再開</button>
+    <button class="btn big" id="pz-retry">リトライ</button>
+    <button class="btn big" id="pz-quit">やめる</button>
+  </div>
+</div>
+
+<!-- ローディング -->
+<div id="loading" class="modal" hidden>
+  <div class="modal-box center">
+    <div class="spinner"></div>
+    <p id="loading-text">読み込み中…</p>
+    <div class="progress"><div id="loading-bar"></div></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="js/util.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/composer.js"></script>
+<script src="js/chartgen.js"></script>
+<script src="js/analyzer.js"></script>
+<script src="js/game.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
